@@ -18,9 +18,17 @@ Start by containerizing a Node.js application.
 
 بدلاً من وضع كل شيء في Image واحد (مما يجعله ضخماً لأنه سيحتوي على أكواد الـ TypeScript، وأدوات التطوير devDependencies، وغيرها)، قمنا بتقسيم العملية إلى 3 مراحل:
 
-1- builder: لبناء الكود (TypeScript to JavaScript).
-2- deps: لتحميل الـ Dependencies الخاصة بالـ Production فقط.
-3- runner: الـ Image النهائي الذي سيتم تشغيله (يحتوي فقط على ما يلزم للتشغيل).
+- builder:
+
+> لبناء الكود (TypeScript to JavaScript).
+
+- deps:
+
+> لتحميل الـ Dependencies الخاصة بالـ Production فقط.
+
+- runner:
+
+> الـ Image النهائي الذي سيتم تشغيله (يحتوي فقط على ما يلزم للتشغيل).
 
 ## builder Stage
 
@@ -38,13 +46,21 @@ Start by containerizing a Node.js application.
 
 ```dockerfile
 RUN corepack enable && corepack prepare pnpm@latest --activate
+or 
+RUN corepack enable pnpm
+    
 ```
 
 - Use BuildKit from Docker:
-  - --mount=type=cache: عمل Cache لمجلد الـ pnpm-store لتسريع عملية تحميل الـ Packages في المرات القادمة.
-  - --mount=type=bind: نحن نقوم بـ "ربط" ملفات الـ package.json و lock و workspace فقط داخل الـ Container مؤقتاً أثناء الـ Install.
+  - --mount=type=cache:
+    > عمل Cache لمجلد الـ pnpm-store لتسريع عملية تحميل الـ Packages في المرات القادمة.
+  - --mount=type=bind:
+    > نحن نقوم بـ "ربط" ملفات الـ package.json و lock و workspace فقط داخل الـ Container مؤقتاً أثناء الـ Install.
   - الفائدة: إذا قمت بتعديل كود الـ Source Code ولم تعدل الـ Packages، فإن Docker لن يعيد تحميل الـ Packages من جديد (لأن ملفات الـ JSON لم تتغير)، مما يوفر وقتاً هائلاً.
-    --frozen-lockfile: يضمن تثبيت النسخ المطابقة تماماً للـ Lock file بدون أي تعديلات.
+  - --frozen-lockfile:
+    > يضمن تثبيت النسخ المطابقة تماماً للـ Lock file بدون أي تعديلات.
+
+---
 
 ```dockerfile
     RUN --mount=type=cache,target=/root/.pnpm-store \
@@ -109,22 +125,20 @@ ENV NODE_ENV=production
   - مجلد dist من مرحلة builder (والذي يحتوي على كود الـ JavaScript المترجم).
   - ملف package.json.
 
-> --chown=node:node: يغير ملكية الملفات لتكون للمستخدم node بدلاً من root (لأمان أعلى).
+> --chown=node:node
+>
+> > يغير ملكية الملفات لتكون للمستخدم node بدلاً من root (لأمان أعلى).
 
 - النتيجة: الـ Source Code الأصلي (TypeScript)، وأدوات التطوير، والـ devDependencies لم يتم نسخها للـ Image النهائي، مما جعل حجمه صغيراً جداً!
 
 ```dockerfile
-COPY --from=deps --chown=node:node /app/node_modules ./node_modules
-COPY --from=builder --chown=node:node /app/dist ./dist
-COPY --from=builder --chown=node:node /app/package.json ./package.json
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
 
 ```
 
-- أمان عالي 🔒. بدلاً من تشغيل التطبيق بصلاحيات root (وهو الخطأ الشائع)، نقوم بالتبديل إلى المستخدم node المحدد مسبقاً في صورة Alpine. إذا تم اختراق التطبيق، لن يمتلك المهاجم صلاحيات الـ Root في الـ Container.
-
-- EXPOSE 3000: إخبار Docker أن التطبيق سيستمع على البورت 3000 (لأغراض التوثيق والشبكات).
-
-- CMD: الأمر الذي سيتم تنفيذه عند تشغيل الـ Container (تشغيل ملف الـ JavaScript الرئيسي).
+---
 
 ```dockerfile
 USER node
@@ -133,6 +147,17 @@ EXPOSE 3000
 
 CMD ["node", "dist/index.js"]
 ```
+
+- USER node
+
+> بدلاً من تشغيل التطبيق بصلاحيات root (وهو الخطأ الشائع)، نقوم بالتبديل إلى المستخدم node المحدد مسبقاً في صورة Alpine. إذا تم اختراق التطبيق، لن يمتلك المهاجم صلاحيات الـ Root في الـ Container.
+
+- EXPOSE 3000:
+
+> إخبار Docker أن التطبيق سيستمع على البورت 3000 (لأغراض التوثيق والشبكات).
+
+- CMD:
+  > الأمر الذي سيتم تنفيذه عند تشغيل الـ Container (تشغيل ملف الـ JavaScript الرئيسي).
 
 ---
 
